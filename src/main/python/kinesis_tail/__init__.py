@@ -3,6 +3,8 @@ import threading
 import time
 import json
 
+__version__ = '${version}'
+
 
 class KinesisClient(object):
     def __init__(self, region):
@@ -33,7 +35,7 @@ class KinesisClient(object):
 
         return response['StreamDescription']['Shards']
 
-    def get_stream_records(self, stream_name):
+    def get_json_events_from_stream(self, stream_name, fields):
         threads = []
 
         shards = self.get_stream_shards(stream_name)
@@ -42,11 +44,9 @@ class KinesisClient(object):
             shard_id = shard['ShardId']
             worker_name = "shard_worker_{0}".format(shard_id)
 
-            worker = KinesisStreamShardReader(self.conn, stream_name, shard_id, fields=['@timestamp', 'message'],
-                                              name=worker_name)
+            worker = KinesisStreamShardReader(self.conn, stream_name, shard_id, fields=fields, name=worker_name)
             worker.daemon = True
             threads.append(worker)
-            print ("Starting worker for shard {0}".format(worker_name))
             worker.start()
 
         for t in threads:
@@ -85,12 +85,10 @@ class KinesisStreamShardReader(threading.Thread):
             shard_iterator = response['NextShardIterator']
             records = response['Records']
             for record in records:
-                event = json.loads(record['Data'])
-                self.print_event(event)
+                try:
+                    event = json.loads(record['Data'])
+                    self.print_event(event)
+                except Exception as e:
+                    print "Could not deserialize kinesis record: {0}".format(e)
 
             time.sleep(1)
-
-
-if __name__ == '__main__':
-    kinesis = KinesisClient('eu-west-1')
-    kinesis.get_stream_records('log-stream-KinesisStream-1J040LCWYZMN3')
