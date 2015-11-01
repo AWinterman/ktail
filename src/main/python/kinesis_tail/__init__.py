@@ -54,7 +54,7 @@ class KinesisStreamShardReader(Process):
     def __init__(self, region, stream_name, shard_id, debug=False, fields=None, name=None, group=None, echo=False,
                  args=(), kwargs={}):
         self.debug = debug
-        self.conn = client('kinesis', region_name='eu-west-1')
+        self.conn = client('kinesis', region_name=region)
         self.stream_name = stream_name
         self.shard_id = shard_id
         self.fields = fields
@@ -108,4 +108,5 @@ class KinesisStreamShardReader(Process):
             print "Error reading shard {0}: {1}".format(self.shard_id, e)
             if self.debug:
                 import traceback
+
                 traceback.print_exc()
