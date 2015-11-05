@@ -97,7 +97,7 @@ class KinesisStreamShardReader(Process):
                 except Exception as e:
                     print "Could not deserialize kinesis record: {0}".format(e)
                     if self.debug:
-                        print "Raw event: {0}".format(event)
+                        print("Raw event: {0}".format(event))
 
             time.sleep(1)
 

@@ -16,7 +16,7 @@ description = "ktail - A tail for AWS Kinesis streams decoding JSON messages."
 license = 'APACHE LICENSE, VERSION 2.0'
 summary = 'AWS Kinesis tail'
 url = 'https://github.com/marco-hoyer/ktail'
-version = '0.2'
+version = '0.1.1'
 
 default_task = ['clean', 'analyze', 'package']
 
