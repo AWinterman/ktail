@@ -24,7 +24,7 @@ def tail(stream_name, fields, region, debug):
             for stream in streams:
                 click.echo(stream)
     except Exception as e:
-        click.echo("Error occured: {0}".format(e))
+        click.echo(e)
         sys.exit(1)
 
 
