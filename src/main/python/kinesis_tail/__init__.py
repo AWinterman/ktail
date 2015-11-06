@@ -80,9 +80,6 @@ class KinesisStreamShardReader(Process):
         shard_iterator = self._get_stream_shard_iterator()
 
         while shard_iterator:
-            if self.debug:
-                print "Reading {0} with shard-iterator {1}".format(self.shard_id, shard_iterator)
-
             response = self.conn.get_records(ShardIterator=shard_iterator)
             shard_iterator = response['NextShardIterator']
             records = response['Records']
@@ -97,7 +94,7 @@ class KinesisStreamShardReader(Process):
                 except Exception as e:
                     print "Could not deserialize kinesis record: {0}".format(e)
                     if self.debug:
-                        print("Raw event: {0}".format(event))
+                        print("Raw event: {0}".format(record['Data']))
 
             time.sleep(1)
 
