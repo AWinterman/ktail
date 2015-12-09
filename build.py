@@ -24,6 +24,7 @@ default_task = ['clean', 'analyze', 'package']
 def set_properties(project):
     project.depends_on('boto3')
     project.depends_on('click')
+    project.depends_on('asyncio')
     project.set_property('coverage_break_build', False)
     project.set_property('install_dependencies_upgrade', True)
     project.get_property('filter_resources_glob').extend(['**/kinesis_tail/__init__.py'])
