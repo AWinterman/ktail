@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"fmt"
+	"sort"
 	"time"
 	"runtime"
 	"github.com/aws/aws-sdk-go/aws"
@@ -11,6 +12,7 @@ import (
 	"github.com/codegangsta/cli"
 	"encoding/json"
 	"sync"
+	log "github.com/Sirupsen/logrus"
 )
 
 func Kinesis() *kinesis.Kinesis {
@@ -68,7 +70,7 @@ func getShardIterator(streamName string, shard kinesis.Shard) string {
 
 	params := &kinesis.GetShardIteratorInput{
 		ShardId: aws.String(*shard.ShardId),
-		ShardIteratorType: aws.String("TRIM_HORIZON"),
+		ShardIteratorType: aws.String("LATEST"),
 		StreamName: aws.String(streamName),
 	}
 
@@ -83,6 +85,7 @@ func getShardIterator(streamName string, shard kinesis.Shard) string {
 func readShard(streamName string, streamShard kinesis.Shard, messageChannel chan kinesis.Record) {
 	svc := Kinesis();
 	shardIterator := getShardIterator(streamName, streamShard)
+	log.Debug("First shard iterator: ", shardIterator)
 
 	for shardIterator != "" {
 		params := &kinesis.GetRecordsInput{
@@ -94,6 +97,7 @@ func readShard(streamName string, streamShard kinesis.Shard, messageChannel chan
 			panic(err)
 		}
 
+		log.Debug(*streamShard.ShardId, " got ", len(resp.Records), " records")
 		for _, record := range resp.Records {
 			messageChannel <- *record
 		}
@@ -113,6 +117,8 @@ func printRecords(messageChannel chan kinesis.Record, fields []string) {
 	for {
 		select {
 		case record := <-messageChannel:
+			log.Debug("Record with part-key: ", *record.PartitionKey, " and seq-nr: ", *record.SequenceNumber)
+
 			var event interface{}
 			json.Unmarshal(record.Data, &event)
 
@@ -125,7 +131,16 @@ func printRecords(messageChannel chan kinesis.Record, fields []string) {
 				}
 				fmt.Println()
 			} else {
-				fmt.Println(event)
+				var keys []string
+				for k := range eventMap {
+					keys = append(keys, k)
+				}
+				sort.Strings(keys)
+				for _, k := range keys {
+					fmt.Print(k, "=", eventMap[k])
+					fmt.Print("  ")
+				}
+				fmt.Println()
 			}
 		}
 	}
@@ -138,9 +153,11 @@ func readStream(streamName string, fields []string) {
 	messageChannel := make(chan kinesis.Record, 100)
 	var waitGroup sync.WaitGroup
 
+	log.Debug("Stream has ", len(streamShards), " shard(s)")
 	for _, streamShard := range streamShards {
 
 		waitGroup.Add(1)
+		log.Debug("Reading ", *streamShard.ShardId)
 		go func(shard kinesis.Shard) {
 			defer waitGroup.Done()
 			readShard(streamName, shard, messageChannel)
@@ -152,19 +169,35 @@ func readStream(streamName string, fields []string) {
 }
 
 func main() {
+	var debug bool
 	runtime.GOMAXPROCS(runtime.NumCPU())
+
+	log.SetFormatter(&log.TextFormatter{})
+	log.SetOutput(os.Stderr)
+	log.SetLevel(log.InfoLevel)
 
 	app := cli.NewApp()
 	app.EnableBashCompletion = true
 	app.Name = "ktail"
-	app.Usage = "read json messages from AWS Kinesis streams"
+	app.Usage = "Read json messages from AWS Kinesis streams"
 	app.Flags = []cli.Flag{
 		cli.StringSliceFlag{
-			Name:            "field",
-			Usage:            "define field to print instead of the complete message",
+			Name: "field",
+			Usage: "define field to print instead of the complete message",
+			EnvVar: "KTAIL_FIELDS",
+		},
+		cli.BoolFlag{
+			Name: "debug",
+			Usage: "Debug output",
+			EnvVar: "KTAIL_DEBUG",
+			Destination: &debug,
 		},
 	}
 	app.Action = func(c *cli.Context) {
+		if debug == true {
+			log.SetLevel(log.DebugLevel)
+		}
+
 		if len(c.Args()) == 0 {
 			for _, streamName := range getStreamNames() {
 				fmt.Println(*streamName)
