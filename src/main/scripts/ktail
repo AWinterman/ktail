@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+
+import sys
+
+if sys.version_info[0] != 3 or sys.version_info[1] < 4:
+    print("Ktail requires Python version >= 3.4")
+    sys.exit(1)
+
+from kinesis_tail.cli import main
+
+main()
