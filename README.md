@@ -1,4 +1,17 @@
 # ktail
-AWS Kinesis tail utility decoding JSON messages
 
-[![Build Status](https://travis-ci.org/marco-hoyer/ktail.svg)](https://travis-ci.org/marco-hoyer/ktail)
+AWS Kinesis tail utility for decoding JSON messages
+
+# installation
+
+```
+go get github.com/AWinterman/ktail
+```
+
+# usage
+
+```
+ktail --help
+```
+
+
