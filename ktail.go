@@ -153,10 +153,36 @@ func main() {
 	log.SetOutput(os.Stderr)
 	log.SetLevel(log.InfoLevel)
 
+	cli.AppHelpTemplate = `
+	NAME:
+	   {{.Name}} - {{.Usage}}
+	USAGE:
+	   {{.HelpName}} [options] {{.ArgsUsage}}
+
+	   Prints messages from STREAM_NAME. If no argument is specified, then
+	   names of the streams in REGION are listed.
+
+	   {{if len .Authors}}
+	AUTHOR(S):
+	   {{range .Authors}}{{ . }}{{end}}
+	   {{end}}
+	OPTIONS:
+	   {{range .VisibleFlags}}{{.}}
+	   {{end}}{{if .Copyright }}
+	COPYRIGHT:
+	   {{.Copyright}}
+	   {{end}}{{if .Version}}
+	VERSION:
+	   {{.Version}}{{end}}
+`
+
 	app := cli.NewApp()
+
 	app.EnableBashCompletion = true
+	app.ArgsUsage = "[STREAM_NAME]"
 	app.Name = "ktail"
-	app.Usage = "Read json messages from AWS Kinesis streams"
+	app.Version = "1.0.0"
+	app.Usage = "Read json messages from AWS Kinesis streams."
 	app.Flags = []cli.Flag{
 		cli.BoolFlag{
 			Name:        "debug",
@@ -166,7 +192,7 @@ func main() {
 		},
 		cli.StringFlag{
 			Name:        "region",
-			Usage:       "specify the aws region",
+			Usage:       "read from kinesis topics in the aws region `REGION`",
 			Value:       "us-east-1",
 			EnvVar:      "AWS_REGION",
 			Destination: &region,
