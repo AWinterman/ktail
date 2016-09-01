@@ -1,28 +1,27 @@
 package main
 
 import (
-	"os"
 	"fmt"
-	"sort"
-	"time"
-	"runtime"
+	log "github.com/Sirupsen/logrus"
+	"os"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/kinesis"
 	"github.com/codegangsta/cli"
-	"encoding/json"
+	"runtime"
 	"sync"
-	log "github.com/Sirupsen/logrus"
+	"time"
 )
 
-func Kinesis() *kinesis.Kinesis {
-	return kinesis.New(session.New(), &aws.Config{Region: aws.String("eu-west-1")})
+func Kinesis(Region string) *kinesis.Kinesis {
+	return kinesis.New(session.New(), aws.NewConfig().WithRegion(Region))
 }
 
-func getStreamNames() []*string {
-	svc := Kinesis();
-	hasMoreItems := true;
-	var streamNames []*string;
+func getStreamNames(Region string) []*string {
+	svc := Kinesis(Region)
+	hasMoreItems := true
+	var streamNames []*string
 
 	for hasMoreItems {
 		resp, err := svc.ListStreams(nil)
@@ -35,16 +34,16 @@ func getStreamNames() []*string {
 	return streamNames
 }
 
-func getStreamShards(StreamName string) []*kinesis.Shard {
-	svc := Kinesis();
-	var hasMoreShards bool = true;
-	var exclusiveStartShardId string;
-	var streamShards []*kinesis.Shard;
+func getStreamShards(StreamName string, Region string) []*kinesis.Shard {
+	svc := Kinesis(Region)
+	var hasMoreShards bool = true
+	var exclusiveStartShardId string
+	var streamShards []*kinesis.Shard
 
 	for hasMoreShards {
 		params := &kinesis.DescribeStreamInput{
-			StreamName:            aws.String(StreamName),
-			Limit: aws.Int64(10),
+			StreamName: aws.String(StreamName),
+			Limit:      aws.Int64(10),
 		}
 
 		if exclusiveStartShardId != "" {
@@ -65,13 +64,13 @@ func getStreamShards(StreamName string) []*kinesis.Shard {
 	return streamShards
 }
 
-func getShardIterator(streamName string, shard kinesis.Shard) string {
-	svc := Kinesis();
+func getShardIterator(streamName string, shard kinesis.Shard, region string) string {
+	svc := Kinesis(region)
 
 	params := &kinesis.GetShardIteratorInput{
-		ShardId: aws.String(*shard.ShardId),
+		ShardId:           aws.String(*shard.ShardId),
 		ShardIteratorType: aws.String("LATEST"),
-		StreamName: aws.String(streamName),
+		StreamName:        aws.String(streamName),
 	}
 
 	resp, err := svc.GetShardIterator(params)
@@ -82,9 +81,9 @@ func getShardIterator(streamName string, shard kinesis.Shard) string {
 	return *resp.ShardIterator
 }
 
-func readShard(streamName string, streamShard kinesis.Shard, messageChannel chan kinesis.Record) {
-	svc := Kinesis();
-	shardIterator := getShardIterator(streamName, streamShard)
+func readShard(streamName string, streamShard kinesis.Shard, messageChannel chan kinesis.Record, region string) {
+	svc := Kinesis(region)
+	shardIterator := getShardIterator(streamName, streamShard, region)
 	log.Debug("First shard iterator: ", shardIterator)
 
 	for shardIterator != "" {
@@ -113,42 +112,18 @@ func readShard(streamName string, streamShard kinesis.Shard, messageChannel chan
 
 }
 
-func printRecords(messageChannel chan kinesis.Record, fields []string) {
+func printRecords(messageChannel chan kinesis.Record) {
 	for {
 		select {
 		case record := <-messageChannel:
-			log.Debug("Record with part-key: ", *record.PartitionKey, " and seq-nr: ", *record.SequenceNumber)
-
-			var event interface{}
-			json.Unmarshal(record.Data, &event)
-
-			eventMap := event.(map[string]interface{})
-
-			if len(fields) > 0 {
-				for _, field := range fields {
-					fmt.Print(eventMap[field])
-					fmt.Print("  ")
-				}
-				fmt.Println()
-			} else {
-				var keys []string
-				for k := range eventMap {
-					keys = append(keys, k)
-				}
-				sort.Strings(keys)
-				for _, k := range keys {
-					fmt.Print(k, "=", eventMap[k])
-					fmt.Print("  ")
-				}
-				fmt.Println()
-			}
+			log.Debug("Record with partition-key: ", *record.PartitionKey, " and sequence number: ", *record.SequenceNumber)
+			fmt.Println(string(record.Data[:]))
 		}
 	}
 }
 
-
-func readStream(streamName string, fields []string) {
-	streamShards := getStreamShards(streamName)
+func readStream(streamName string, region string) {
+	streamShards := getStreamShards(streamName, region)
 
 	messageChannel := make(chan kinesis.Record, 100)
 	var waitGroup sync.WaitGroup
@@ -160,16 +135,18 @@ func readStream(streamName string, fields []string) {
 		log.Debug("Reading ", *streamShard.ShardId)
 		go func(shard kinesis.Shard) {
 			defer waitGroup.Done()
-			readShard(streamName, shard, messageChannel)
+			readShard(streamName, shard, messageChannel, region)
 		}(*streamShard)
 	}
 
-	printRecords(messageChannel, fields)
+	printRecords(messageChannel)
 	waitGroup.Wait()
 }
 
 func main() {
 	var debug bool
+	var region string
+
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	log.SetFormatter(&log.TextFormatter{})
@@ -181,16 +158,18 @@ func main() {
 	app.Name = "ktail"
 	app.Usage = "Read json messages from AWS Kinesis streams"
 	app.Flags = []cli.Flag{
-		cli.StringSliceFlag{
-			Name: "field",
-			Usage: "define field to print instead of the complete message",
-			EnvVar: "KTAIL_FIELDS",
-		},
 		cli.BoolFlag{
-			Name: "debug",
-			Usage: "Debug output",
-			EnvVar: "KTAIL_DEBUG",
+			Name:        "debug",
+			Usage:       "Debug output",
+			EnvVar:      "KTAIL_DEBUG",
 			Destination: &debug,
+		},
+		cli.StringFlag{
+			Name:        "region",
+			Usage:       "specify the aws region",
+			Value:       "us-east-1",
+			EnvVar:      "AWS_REGION",
+			Destination: &region,
 		},
 	}
 	app.Action = func(c *cli.Context) {
@@ -199,17 +178,15 @@ func main() {
 		}
 
 		if len(c.Args()) == 0 {
-			for _, streamName := range getStreamNames() {
+			fmt.Println("streams in " + region + ":")
+			for _, streamName := range getStreamNames(region) {
 				fmt.Println(*streamName)
 			}
 		} else if len(c.Args()) > 0 {
 			streamName := c.Args()[0]
-			filterFields := c.StringSlice("field")
-
-			readStream(streamName, filterFields)
+			readStream(streamName, region)
 		}
 	}
 
 	app.Run(os.Args)
 }
-
